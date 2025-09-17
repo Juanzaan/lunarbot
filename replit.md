@@ -11,10 +11,10 @@ This is a comprehensive Discord bot built with Node.js and discord.js that provi
 
 ## Features
 ### 🎫 Ticket System
-- Interactive ticket creation with buttons
-- Private ticket channels with proper permissions
-- Staff claiming and management
-- Automatic ticket closure
+- Interactive ticket creation panel with button
+- Creates private ticket channels with user-specific permissions
+- Ticket claiming system for staff members
+- Manual and automatic ticket closure with 10-second delay
 
 ### 🔒 Auto-Role System
 - Automatically assigns "." role to new members
@@ -27,9 +27,10 @@ This is a comprehensive Discord bot built with Node.js and discord.js that provi
 - DM notifications for successful verification
 
 ### 💾 Backup System
-- Complete server backup (roles, channels, categories)
-- JSON-based storage in `/backups` directory
-- List and detailed backup information commands
+- Complete server backup including roles, channels, and categories
+- JSON-based storage in local `backups/` directory
+- Commands: `/backup create`, `/backup list`, `/backup info <id>`
+- Backup files named with timestamp: `backup_[guild_id]_[timestamp].json`
 
 ### 👮 Moderation Tools
 - Temporary mute system with time parsing
@@ -55,9 +56,24 @@ This is a comprehensive Discord bot built with Node.js and discord.js that provi
 ## Setup Requirements
 ### Discord Developer Portal Configuration
 The bot requires these privileged intents to be enabled:
-- **Server Members Intent** - For auto-role functionality
-- **Message Content Intent** - For message processing
-- **Presence Intent** - For enhanced user detection
+
+**Required Intents:**
+- **Server Members Intent** - For auto-role functionality when new members join
+- **Message Content Intent** - For processing message reactions and content
+
+**Troubleshooting:** If you see "Used disallowed intents" error, ensure both required intents above are enabled in Discord Developer Portal > Bot section > Privileged Gateway Intents.
+
+### Bot Invitation
+You must invite the bot to your Discord server with proper permissions:
+
+1. **Generate Invite URL:**
+   - In Discord Developer Portal, go to OAuth2 > URL Generator
+   - Select scopes: `bot` and `applications.commands`
+   - Select permissions: Manage Roles, Manage Channels, Read Message History, Send Messages, Add Reactions, Use Application Commands, View Channels
+
+2. **Use the generated URL** to invite the bot to your target Discord server
+
+3. **Ensure the bot's role** is positioned high enough in your server's role hierarchy to manage other roles
 
 ### Environment Variables
 - `TOKEN` - Discord bot token
@@ -68,7 +84,8 @@ The bot requires these privileged intents to be enabled:
 - **Setup Date**: September 17, 2025
 - **Imported from GitHub** with full functionality intact
 - **Environment**: Configured for Replit with proper secrets management
-- **Deployment**: VM-based deployment for persistent bot operation
+- **Runtime**: Configured with Replit Workflow (node index.js) for continuous operation
+- **Deployment**: VM-based deployment configured for production use
 
 ## User Preferences
 - Spanish language interface for all bot commands and responses
@@ -76,8 +93,13 @@ The bot requires these privileged intents to be enabled:
 - Professional embed formatting for all bot responses
 
 ## Technical Notes
-- Uses discord.js v14 with proper intent management
+- Uses discord.js v14 with proper intent management (Guilds, GuildMessages, MessageContent, GuildMembers, GuildMessageReactions)
 - File-based backup system with automatic directory creation
-- setTimeout-based auto-unmute system
+- setTimeout-based auto-unmute system for temporary moderation
 - Comprehensive permission checking for all admin commands
 - Graceful error handling with console logging and user feedback
+
+## Running the Bot
+- **Development**: The bot runs automatically via Replit Workflow when properly configured
+- **Production**: Use Replit Deployments for persistent, scalable operation
+- **Logs**: Monitor console output for connection status and error messages
