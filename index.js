@@ -763,6 +763,143 @@ client.on(Events.InteractionCreate, async interaction => {
         });
       }
     }
+    
+    if (subcommand === 'config') {
+      // Check if user has administrator permissions
+      if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return await interaction.reply({
+          content: '❌ Necesitas permisos de administrador para configurar el sistema de autoroles.',
+          ephemeral: true
+        });
+      }
+      
+      const opcion = interaction.options.getString('opcion');
+      const valor = interaction.options.getString('valor');
+      const config = await loadConfig(interaction.guild.id);
+      
+      try {
+        switch (opcion) {
+          case 'toggle':
+            config.autoroles.enabled = !config.autoroles.enabled;
+            await interaction.reply({
+              embeds: [{
+                title: '⚙️ Sistema de Auto-roles',
+                description: `El sistema de auto-roles ha sido **${config.autoroles.enabled ? 'activado' : 'desactivado'}**`,
+                color: config.autoroles.enabled ? 0x00FF00 : 0xFF0000
+              }],
+              ephemeral: true
+            });
+            break;
+            
+          case 'add_role':
+            if (!valor) {
+              return await interaction.reply({
+                content: '❌ Debes especificar el nombre del rol a agregar.',
+                ephemeral: true
+              });
+            }
+            
+            if (!config.autoroles.roles.includes(valor)) {
+              config.autoroles.roles.push(valor);
+              config.autoroles.humanRoles.push(valor);
+              config.autoroles.botRoles.push(valor);
+            }
+            
+            await interaction.reply({
+              embeds: [{
+                title: '✅ Rol Agregado',
+                description: `El rol "${valor}" ha sido agregado al sistema de auto-roles`,
+                color: 0x00FF00
+              }],
+              ephemeral: true
+            });
+            break;
+            
+          case 'welcome_msg':
+            if (!valor) {
+              return await interaction.reply({
+                content: '❌ Debes especificar el mensaje de bienvenida.',
+                ephemeral: true
+              });
+            }
+            
+            config.autoroles.welcomeMessage = valor;
+            await interaction.reply({
+              embeds: [{
+                title: '✅ Mensaje Actualizado',
+                description: `Mensaje de bienvenida actualizado:\n"${valor}"`,
+                color: 0x00FF00
+              }],
+              ephemeral: true
+            });
+            break;
+            
+          case 'dm_toggle':
+            config.autoroles.sendDM = !config.autoroles.sendDM;
+            await interaction.reply({
+              embeds: [{
+                title: '⚙️ DM de Bienvenida',
+                description: `Los DM de bienvenida han sido **${config.autoroles.sendDM ? 'activados' : 'desactivados'}**`,
+                color: config.autoroles.sendDM ? 0x00FF00 : 0xFF0000
+              }],
+              ephemeral: true
+            });
+            break;
+        }
+        
+        await saveConfig(interaction.guild.id, config);
+        
+      } catch (error) {
+        console.error('Error updating autoroles config:', error);
+        await interaction.reply({
+          content: '❌ Error al actualizar la configuración.',
+          ephemeral: true
+        });
+      }
+    }
+    
+    if (subcommand === 'list') {
+      const config = await loadConfig(interaction.guild.id);
+      
+      const listEmbed = {
+        title: '📋 Configuración de Auto-roles',
+        description: `Estado actual del sistema de auto-roles en ${interaction.guild.name}`,
+        color: config.autoroles.enabled ? 0x00FF00 : 0xFF0000,
+        fields: [
+          {
+            name: '🔄 Estado del Sistema',
+            value: config.autoroles.enabled ? '✅ Activado' : '❌ Desactivado',
+            inline: true
+          },
+          {
+            name: '👥 Roles para Humanos',
+            value: config.autoroles.humanRoles.length > 0 ? config.autoroles.humanRoles.join(', ') : 'Ninguno',
+            inline: true
+          },
+          {
+            name: '🤖 Roles para Bots',
+            value: config.autoroles.botRoles.length > 0 ? config.autoroles.botRoles.join(', ') : 'Ninguno',
+            inline: true
+          },
+          {
+            name: '💬 DM de Bienvenida',
+            value: config.autoroles.sendDM ? '✅ Activado' : '❌ Desactivado',
+            inline: true
+          },
+          {
+            name: '📝 Mensaje de Bienvenida',
+            value: config.autoroles.welcomeMessage || 'No configurado',
+            inline: false
+          }
+        ],
+        footer: {
+          text: 'Usa /autoroles config para modificar estas configuraciones'
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+      await interaction.reply({ embeds: [listEmbed], ephemeral: true });
+    }
   }
   
   if (interaction.commandName === 'captcha') {
@@ -1395,6 +1532,96 @@ client.on(Events.InteractionCreate, async interaction => {
         content: '❌ Error al desmutear al usuario.',
         ephemeral: true
       });
+    }
+  }
+  
+  if (interaction.commandName === 'config') {
+    const subcommand = interaction.options.getSubcommand();
+    
+    // Check if user has administrator permissions
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return await interaction.reply({
+        content: '❌ Necesitas permisos de administrador para acceder a la configuración general.',
+        ephemeral: true
+      });
+    }
+    
+    if (subcommand === 'view') {
+      const config = await loadConfig(interaction.guild.id);
+      
+      const viewEmbed = {
+        title: '⚙️ Configuración General del Bot',
+        description: `Configuración completa del bot en **${interaction.guild.name}**`,
+        color: 0x5865F2,
+        fields: [
+          {
+            name: '🎫 Sistema de Tickets',
+            value: `**Estado:** Activo\n**Staff Roles:** ${config.tickets.staffRoles.join(', ')}`,
+            inline: false
+          },
+          {
+            name: '🔒 Auto-roles',
+            value: `**Estado:** ${config.autoroles.enabled ? '✅ Activado' : '❌ Desactivado'}\n**Roles:** ${config.autoroles.roles.join(', ')}\n**DM Bienvenida:** ${config.autoroles.sendDM ? 'Sí' : 'No'}`,
+            inline: false
+          },
+          {
+            name: '🛡️ Sistema de Captcha',
+            value: `**Estado:** ${config.captcha.enabled ? '✅ Activado' : '❌ Desactivado'}\n**Tipo:** ${config.captcha.type}\n**Rol Verificado:** ${config.captcha.verifiedRole}`,
+            inline: false
+          }
+        ],
+        footer: {
+          text: 'Usa los comandos específicos para modificar cada configuración'
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+      await interaction.reply({ embeds: [viewEmbed], ephemeral: true });
+    }
+    
+    if (subcommand === 'reset') {
+      const modulo = interaction.options.getString('modulo');
+      
+      try {
+        let config = await loadConfig(interaction.guild.id);
+        const defaultConfig = getDefaultConfig();
+        
+        switch (modulo) {
+          case 'all':
+            config = defaultConfig;
+            break;
+          case 'tickets':
+            config.tickets = defaultConfig.tickets;
+            break;
+          case 'autoroles':
+            config.autoroles = defaultConfig.autoroles;
+            break;
+          case 'captcha':
+            config.captcha = defaultConfig.captcha;
+            break;
+        }
+        
+        await saveConfig(interaction.guild.id, config);
+        
+        const resetEmbed = {
+          title: '🔄 Configuración Reseteada',
+          description: `La configuración de **${modulo === 'all' ? 'todos los módulos' : modulo}** ha sido reseteada a los valores predeterminados.`,
+          color: 0x00FF00,
+          footer: {
+            text: 'Configuración guardada exitosamente'
+          },
+          timestamp: new Date().toISOString()
+        };
+        
+        await interaction.reply({ embeds: [resetEmbed], ephemeral: true });
+        
+      } catch (error) {
+        console.error('Error resetting config:', error);
+        await interaction.reply({
+          content: '❌ Error al resetear la configuración.',
+          ephemeral: true
+        });
+      }
     }
   }
   
