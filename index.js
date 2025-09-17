@@ -150,6 +150,12 @@ async function getBackupInfo(backupId) {
   }
 }
 
+// Function to check if user has staff roles for ticket management
+function hasStaffRole(member) {
+  const staffRoles = ['Staff', 'Captain', 'Reclutador', 'Colider', 'Lider', 'Founder'];
+  return member.roles.cache.some(role => staffRoles.includes(role.name));
+}
+
 // Parse time string to milliseconds (e.g., "1h", "30m", "2d")
 function parseTime(timeStr) {
   const timeRegex = /^(\d+)(s|m|h|d|w)$/;
@@ -441,6 +447,14 @@ client.on(Events.InteractionCreate, async interaction => {
       if (!interaction.channel.name.startsWith('ticket-')) {
         return await interaction.reply({
           content: '❌ Este comando solo se puede usar en canales de tickets.',
+          ephemeral: true
+        });
+      }
+      
+      // Check if user has staff role
+      if (!hasStaffRole(interaction.member)) {
+        return await interaction.reply({
+          content: '❌ Solo los miembros del staff (Staff, Captain, Reclutador, Colider, Lider, Founder) pueden cerrar tickets.',
           ephemeral: true
         });
       }
@@ -1311,6 +1325,14 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     
     if (interaction.customId === 'close_ticket') {
+      // Check if user has staff role
+      if (!hasStaffRole(interaction.member)) {
+        return await interaction.reply({
+          content: '❌ Solo los miembros del staff (Staff, Captain, Reclutador, Colider, Lider, Founder) pueden cerrar tickets.',
+          ephemeral: true
+        });
+      }
+      
       const closeEmbed = {
         title: '🔒 Ticket Cerrado',
         description: `Ticket cerrado por ${interaction.user}\n\n**Fecha:** ${new Date().toLocaleString('es-ES')}\n\n*El canal se eliminará en 10 segundos...*`,
