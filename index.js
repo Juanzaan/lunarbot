@@ -150,9 +150,75 @@ async function getBackupInfo(backupId) {
   }
 }
 
+// Configuration system
+async function loadConfig(guildId) {
+  const configDir = 'configs';
+  const fileName = `config_${guildId}.json`;
+  const filePath = path.join(configDir, fileName);
+  
+  try {
+    await fs.mkdir(configDir, { recursive: true });
+    const data = await fs.readFile(filePath, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    // Return default config if file doesn't exist
+    return getDefaultConfig();
+  }
+}
+
+async function saveConfig(guildId, config) {
+  const configDir = 'configs';
+  const fileName = `config_${guildId}.json`;
+  const filePath = path.join(configDir, fileName);
+  
+  try {
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify(config, null, 2));
+    return true;
+  } catch (error) {
+    console.error('Error saving config:', error);
+    return false;
+  }
+}
+
+function getDefaultConfig() {
+  return {
+    tickets: {
+      panelTitle: '🎫 Sistema de Tickets',
+      panelDescription: 'Haz clic en el botón de abajo para crear un ticket de soporte.\n\n**¿Cuándo usar tickets?**\n• Reportar problemas\n• Solicitar ayuda\n• Preguntas importantes\n• Sugerencias\n\n*Los tickets son privados y solo el staff puede verlos.*',
+      welcomeTitle: '🎫 Ticket Creado',
+      welcomeDescription: '¡Hola {user}! Tu ticket ha sido creado exitosamente.\n\n**¿Qué hacer ahora?**\n• Explica tu problema o pregunta en detalle\n• El staff será notificado y te responderá pronto\n• Mantén la conversación aquí\n\n**Para cerrar el ticket:**\nUsa el comando `/ticket close` cuando hayas terminado.',
+      categories: ['General', 'Soporte', 'Reportes', 'Sugerencias'],
+      logChannel: null,
+      staffRoles: ['Staff', 'Captain', 'Reclutador', 'Colider', 'Lider', 'Founder']
+    },
+    autoroles: {
+      enabled: true,
+      roles: ['.'],  // Can now have multiple roles
+      botRoles: ['.'], // Separate roles for bots
+      humanRoles: ['.'], // Separate roles for humans
+      welcomeMessage: 'Bienvenido al servidor!',
+      sendDM: false
+    },
+    captcha: {
+      enabled: false,
+      type: 'reaction', // 'reaction', 'button', 'math'
+      verifiedRole: 'Verificado',
+      autoKickTime: 300000, // 5 minutes in ms
+      title: '🛡️ Verificación de Captcha',
+      description: '**¡Bienvenido al servidor!**\n\nPara acceder a todos los canales y participar en la comunidad, necesitas verificarte.\n\n**¿Cómo verificarte?**\n• Reacciona con ✅ a este mensaje\n• Recibirás automáticamente el rol de "Verificado"\n• Podrás acceder a todos los canales\n\n*Este paso es obligatorio para evitar bots y spam.*'
+    }
+  };
+}
+
 // Function to check if user has staff roles for ticket management
-function hasStaffRole(member) {
-  const staffRoles = ['Staff', 'Captain', 'Reclutador', 'Colider', 'Lider', 'Founder'];
+function hasStaffRole(member, config = null) {
+  let staffRoles = ['Staff', 'Captain', 'Reclutador', 'Colider', 'Lider', 'Founder'];
+  
+  if (config && config.tickets && config.tickets.staffRoles) {
+    staffRoles = config.tickets.staffRoles;
+  }
+  
   return member.roles.cache.some(role => staffRoles.includes(role.name));
 }
 
@@ -185,23 +251,55 @@ client.once(Events.ClientReady, () => {
 client.on(Events.GuildMemberAdd, async (member) => {
   try {
     const guild = member.guild;
+    const config = await loadConfig(guild.id);
     
-    // Find the "." role
-    let autoRole = guild.roles.cache.find(role => role.name === '.');
-    
-    // If the role doesn't exist, create it
-    if (!autoRole) {
-      autoRole = await guild.roles.create({
-        name: '.',
-        color: '#95a5a6',
-        reason: 'Auto-role created by bot for new members'
-      });
-      console.log(`Created auto-role "." in guild: ${guild.name}`);
+    if (!config.autoroles.enabled) {
+      return;
     }
     
-    // Assign the role to the new member
-    await member.roles.add(autoRole);
-    console.log(`Assigned auto-role "." to new member: ${member.user.tag} (Bot: ${member.user.bot ? 'Yes' : 'No'})`);
+    // Determine which roles to assign based on member type
+    let rolesToAssign = [];
+    if (member.user.bot) {
+      rolesToAssign = config.autoroles.botRoles || config.autoroles.roles;
+    } else {
+      rolesToAssign = config.autoroles.humanRoles || config.autoroles.roles;
+    }
+    
+    // Assign all configured roles
+    for (const roleName of rolesToAssign) {
+      let role = guild.roles.cache.find(r => r.name === roleName);
+      
+      // Create role if it doesn't exist
+      if (!role) {
+        role = await guild.roles.create({
+          name: roleName,
+          color: '#95a5a6',
+          reason: 'Auto-role created by bot for new members'
+        });
+        console.log(`Created auto-role "${roleName}" in guild: ${guild.name}`);
+      }
+      
+      await member.roles.add(role);
+      console.log(`Assigned auto-role "${roleName}" to new member: ${member.user.tag} (Bot: ${member.user.bot ? 'Yes' : 'No'})`);
+    }
+    
+    // Send welcome DM if enabled
+    if (config.autoroles.sendDM && !member.user.bot && config.autoroles.welcomeMessage) {
+      try {
+        await member.send({
+          embeds: [{
+            title: '¡Bienvenido!',
+            description: config.autoroles.welcomeMessage,
+            color: 0x00FF00,
+            footer: {
+              text: guild.name
+            }
+          }]
+        });
+      } catch (dmError) {
+        console.log(`Could not send welcome DM to ${member.user.tag}`);
+      }
+    }
     
   } catch (error) {
     console.error('Error in auto-role system:', error);
@@ -416,11 +514,12 @@ client.on(Events.InteractionCreate, async interaction => {
   
   if (interaction.commandName === 'ticket') {
     const subcommand = interaction.options.getSubcommand();
+    const config = await loadConfig(interaction.guild.id);
     
     if (subcommand === 'panel') {
       const ticketEmbed = {
-        title: '🎫 Sistema de Tickets',
-        description: 'Haz clic en el botón de abajo para crear un ticket de soporte.\n\n**¿Cuándo usar tickets?**\n• Reportar problemas\n• Solicitar ayuda\n• Preguntas importantes\n• Sugerencias\n\n*Los tickets son privados y solo el staff puede verlos.*',
+        title: config.tickets.panelTitle,
+        description: config.tickets.panelDescription,
         color: 0x00FF00,
         footer: {
           text: 'Sistema de tickets • Respuesta rápida garantizada'
@@ -477,6 +576,72 @@ client.on(Events.InteractionCreate, async interaction => {
           console.error('Error al eliminar el canal:', error);
         }
       }, 10000);
+    }
+    
+    if (subcommand === 'config') {
+      // Check if user has administrator permissions
+      if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return await interaction.reply({
+          content: '❌ Necesitas permisos de administrador para configurar el sistema de tickets.',
+          ephemeral: true
+        });
+      }
+      
+      const tipo = interaction.options.getString('tipo');
+      const mensaje = interaction.options.getString('mensaje');
+      
+      try {
+        const config = await loadConfig(interaction.guild.id);
+        
+        // Update the specified configuration
+        switch (tipo) {
+          case 'panel_title':
+            config.tickets.panelTitle = mensaje;
+            break;
+          case 'panel_desc':
+            config.tickets.panelDescription = mensaje;
+            break;
+          case 'welcome_title':
+            config.tickets.welcomeTitle = mensaje;
+            break;
+          case 'welcome_desc':
+            config.tickets.welcomeDescription = mensaje;
+            break;
+        }
+        
+        await saveConfig(interaction.guild.id, config);
+        
+        const configEmbed = {
+          title: '⚙️ Configuración de Tickets Actualizada',
+          description: `La configuración del sistema de tickets ha sido actualizada exitosamente.`,
+          color: 0x00FF00,
+          fields: [
+            {
+              name: '🔧 Configuración modificada',
+              value: `**Tipo:** ${tipo.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}\n**Nuevo valor:** ${mensaje.length > 100 ? mensaje.substring(0, 100) + '...' : mensaje}`,
+              inline: false
+            },
+            {
+              name: '💡 Consejo',
+              value: 'Usa `/ticket panel` para ver cómo se ve el nuevo mensaje en acción.',
+              inline: false
+            }
+          ],
+          footer: {
+            text: 'Configuración guardada • ' + interaction.user.tag
+          },
+          timestamp: new Date().toISOString()
+        };
+        
+        await interaction.reply({ embeds: [configEmbed], ephemeral: true });
+        
+      } catch (error) {
+        console.error('Error updating ticket config:', error);
+        await interaction.reply({
+          content: '❌ Error al actualizar la configuración. Inténtalo de nuevo.',
+          ephemeral: true
+        });
+      }
     }
   }
   
@@ -1240,6 +1405,7 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.customId === 'create_ticket') {
       const guild = interaction.guild;
       const user = interaction.user;
+      const config = await loadConfig(guild.id);
       
       // Check if user already has a ticket
       const existingTicket = guild.channels.cache.find(
@@ -1283,8 +1449,8 @@ client.on(Events.InteractionCreate, async interaction => {
         });
         
         const welcomeEmbed = {
-          title: '🎫 Ticket Creado',
-          description: `¡Hola ${user}! Tu ticket ha sido creado exitosamente.\n\n**¿Qué hacer ahora?**\n• Explica tu problema o pregunta en detalle\n• El staff será notificado y te responderá pronto\n• Mantén la conversación aquí\n\n**Para cerrar el ticket:**\nUsa el comando \`/ticket close\` cuando hayas terminado.`,
+          title: config.tickets.welcomeTitle,
+          description: config.tickets.welcomeDescription.replace('{user}', user.toString()),
           color: 0x00FF00,
           footer: {
             text: `Ticket creado por ${user.tag} • ${new Date().toLocaleString('es-ES')}`
@@ -1404,7 +1570,25 @@ const commands = [
     .addSubcommand(subcommand =>
       subcommand
         .setName('close')
-        .setDescription('Cierra el ticket actual')),
+        .setDescription('Cierra el ticket actual'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('config')
+        .setDescription('Configura mensajes del sistema de tickets')
+        .addStringOption(option =>
+          option.setName('tipo')
+            .setDescription('Tipo de mensaje a configurar')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Título del Panel', value: 'panel_title' },
+              { name: 'Descripción del Panel', value: 'panel_desc' },
+              { name: 'Título de Bienvenida', value: 'welcome_title' },
+              { name: 'Descripción de Bienvenida', value: 'welcome_desc' }
+            ))
+        .addStringOption(option =>
+          option.setName('mensaje')
+            .setDescription('Nuevo texto del mensaje (usa {user} para mencionar al usuario)')
+            .setRequired(true))),
   new SlashCommandBuilder()
     .setName('autoroles')
     .setDescription('Sistema de autoroles para nuevos miembros')
@@ -1415,7 +1599,29 @@ const commands = [
     .addSubcommand(subcommand =>
       subcommand
         .setName('test')
-        .setDescription('Prueba el sistema de autoroles (solo administradores)')),
+        .setDescription('Prueba el sistema de autoroles (solo administradores)'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('config')
+        .setDescription('Configura opciones avanzadas del sistema de autoroles')
+        .addStringOption(option =>
+          option.setName('opcion')
+            .setDescription('Opción a configurar')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Activar/Desactivar Sistema', value: 'toggle' },
+              { name: 'Agregar Rol', value: 'add_role' },
+              { name: 'Mensaje de Bienvenida', value: 'welcome_msg' },
+              { name: 'Activar DM de Bienvenida', value: 'dm_toggle' }
+            ))
+        .addStringOption(option =>
+          option.setName('valor')
+            .setDescription('Valor de la configuración (rol o mensaje)')
+            .setRequired(false)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('list')
+        .setDescription('Muestra la configuración actual del sistema de autoroles')),
   new SlashCommandBuilder()
     .setName('captcha')
     .setDescription('Sistema de captcha con reacciones para verificar usuarios')
@@ -1467,7 +1673,28 @@ const commands = [
     .addUserOption(option =>
       option.setName('usuario')
         .setDescription('Usuario a desmutear')
-        .setRequired(true))
+        .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('config')
+    .setDescription('Configuración general del bot')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('view')
+        .setDescription('Ver toda la configuración actual del bot'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('reset')
+        .setDescription('Resetear configuración a valores predeterminados')
+        .addStringOption(option =>
+          option.setName('modulo')
+            .setDescription('Módulo a resetear (o "all" para todo)')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Todo', value: 'all' },
+              { name: 'Tickets', value: 'tickets' },
+              { name: 'Auto-roles', value: 'autoroles' },
+              { name: 'Captcha', value: 'captcha' }
+            )))
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
